@@ -4,18 +4,19 @@
 #include <pthread.h>
 
 struct job_queue {
-  void **buffer;           // Array to hold job pointers.
-  int capacity;            // Max number of jobs in the queue.
-  int count;               // Current number of jobs.
-  int head;                // Index to pop from.
-  int tail;                // Index to push to.
+    void **buffer;           // Array to hold job pointers.
+    int capacity;            // Max number of jobs in the queue.
+    int count;               // Current number of jobs.
+    int head;                // Index to pop from.
+    int tail;                // Index to push to.
+    int closed;              // Flag indicating if the queue is closed.
 
-  pthread_mutex_t lock;    // Mutex to protect the queue.
-  pthread_cond_t not_full; // Condition variable to wait for space.
-  pthread_cond_t not_empty;// Condition variable to wait for jobs.
+    pthread_mutex_t lock;    // Mutex to protect the queue.
+    pthread_cond_t not_full; // Condition variable to wait for space.
+    pthread_cond_t not_empty;// Condition variable to wait for jobs.
 };
 
-// Initialise a job queue with the given capacity. The queue starts out
+// Initialize a job queue with the given capacity. The queue starts out
 // empty. Returns non-zero on error.
 int job_queue_init(struct job_queue *job_queue, int capacity);
 

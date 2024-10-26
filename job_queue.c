@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include <pthread.h>
 #include "job_queue.h"
 
 int job_queue_init(struct job_queue *job_queue, int capacity) {
@@ -13,6 +14,7 @@ int job_queue_init(struct job_queue *job_queue, int capacity) {
     job_queue->count = 0;
     job_queue->head = 0;
     job_queue->tail = 0;
+    job_queue->closed = 0;
 
     pthread_mutex_init(&job_queue->lock, NULL);
     pthread_cond_init(&job_queue->not_full, NULL);
@@ -24,18 +26,18 @@ int job_queue_init(struct job_queue *job_queue, int capacity) {
 int job_queue_destroy(struct job_queue *job_queue) {
     pthread_mutex_lock(&job_queue->lock);
 
-    // Wait for the queue to become empty.
-    while (job_queue->count > 0) {
-        pthread_cond_wait(&job_queue->not_empty, &job_queue->lock);
-    }
+    // Set the closed flag and wake up all waiting threads.
+    job_queue->closed = 1;
+    pthread_cond_broadcast(&job_queue->not_empty);
+    pthread_cond_broadcast(&job_queue->not_full);
+
+    pthread_mutex_unlock(&job_queue->lock);
 
     // Clean up.
     free(job_queue->buffer);
     pthread_mutex_destroy(&job_queue->lock);
     pthread_cond_destroy(&job_queue->not_full);
     pthread_cond_destroy(&job_queue->not_empty);
-
-    pthread_mutex_unlock(&job_queue->lock);
 
     return 0;
 }
@@ -44,8 +46,13 @@ int job_queue_push(struct job_queue *job_queue, void *data) {
     pthread_mutex_lock(&job_queue->lock);
 
     // Block if the queue is full.
-    while (job_queue->count == job_queue->capacity) {
+    while (job_queue->count == job_queue->capacity && !job_queue->closed) {
         pthread_cond_wait(&job_queue->not_full, &job_queue->lock);
+    }
+
+    if (job_queue->closed) {
+        pthread_mutex_unlock(&job_queue->lock);
+        return -1; // Queue is closed.
     }
 
     // Add the job to the queue.
@@ -64,8 +71,13 @@ int job_queue_pop(struct job_queue *job_queue, void **data) {
     pthread_mutex_lock(&job_queue->lock);
 
     // Block if the queue is empty.
-    while (job_queue->count == 0) {
+    while (job_queue->count == 0 && !job_queue->closed) {
         pthread_cond_wait(&job_queue->not_empty, &job_queue->lock);
+    }
+
+    if (job_queue->count == 0 && job_queue->closed) {
+        pthread_mutex_unlock(&job_queue->lock);
+        return -1; // Queue is closed and empty.
     }
 
     // Remove the job from the queue.
